@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>WoP für friends</title>
+
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="WoP Friends">
+<meta name="theme-color" content="#0b0713">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&display=swap" rel="stylesheet">
+
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.2/dist/peerjs.min.js"></script>
+
+<style>
+  :root{
+    --ink:#0b0713;
+    --card:#17101f;
+    --card-border:rgba(255,255,255,0.09);
+    --grad-a:#8b5cf6;
+    --grad-b:#ec4899;
+    --wahrheit:#2dd4bf;
+    --pflicht:#fb7185;
+    --text:#f4f1f8;
+    --muted:#9c93ab;
+    --danger:#fb7185;
+    --safe-t: env(safe-area-inset-top, 0px);
+    --safe-b: env(safe-area-inset-bottom, 0px);
+    --safe-l: env(safe-area-inset-left, 0px);
+    --safe-r: env(safe-area-inset-right, 0px);
+  }
+
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body{ height:100%; }
+
+  body{
+    margin:0; background:var(--ink); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,sans-serif;
+    display:flex; align-items:center; justify-content:center;
+    min-height:100vh; overflow:hidden; user-select:none;
+    -webkit-user-select:none; touch-action:manipulation; overscroll-behavior:none;
+    padding:calc(var(--safe-t) + 16px) calc(var(--safe-r) + 16px) calc(var(--safe-b) + 16px) calc(var(--safe-l) + 16px);
+  }
+
+  .display{ font-family:'Fredoka',-apple-system,sans-serif; }
+
+  .blob{ position:fixed; border-radius:50%; filter:blur(60px); opacity:0.45; pointer-events:none; z-index:0; }
+  .blob-1{ width:280px; height:280px; background:var(--grad-a); top:-60px; left:-80px; animation:drift1 16s ease-in-out infinite; }
+  .blob-2{ width:320px; height:320px; background:var(--grad-b); bottom:-100px; right:-90px; animation:drift2 19s ease-in-out infinite; }
+  .blob-3{ width:200px; height:200px; background:var(--wahrheit); bottom:20%; left:-60px; opacity:0.28; animation:drift3 22s ease-in-out infinite; }
+
+  @keyframes drift1{ 0%,100%{ transform:translate(0,0) scale(1);} 50%{ transform:translate(40px,50px) scale(1.15);} }
+  @keyframes drift2{ 0%,100%{ transform:translate(0,0) scale(1);} 50%{ transform:translate(-50px,-30px) scale(1.1);} }
+  @keyframes drift3{ 0%,100%{ transform:translate(0,0) scale(1);} 50%{ transform:translate(30px,-40px) scale(1.2);} }
+
+  .container{
+    position:relative; z-index:1; background:rgba(23,16,31,0.72);
+    backdrop-filter:blur(22px); -webkit-backdrop-filter:blur(22px);
+    border:1px solid var(--card-border); padding:30px 26px; border-radius:28px;
+    box-shadow:0 25px 60px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.06);
+    width:100%; max-width:420px; text-align:center;
+    max-height:calc(100vh - var(--safe-t) - var(--safe-b) - 32px); overflow-y:auto;
+  }
+
+  .top-left-code {
+    position: fixed; top: calc(var(--safe-t) + 14px); left: calc(var(--safe-l) + 14px);
+    z-index: 5; background: rgba(23,16,31,0.72); backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px); border: 1px solid var(--card-border);
+    padding: 6px 14px; border-radius: 20px; font-size: 0.85rem; font-weight: 700;
+    color: var(--text); display: none; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  }
+
+  .top-right-bar {
+    position: fixed; top: calc(var(--safe-t) + 14px); right: calc(var(--safe-r) + 14px);
+    z-index: 5; display: flex; align-items: center; gap: 8px;
+  }
+
+  .music-control-wrapper {
+    display: flex; align-items: center; gap: 6px; background: rgba(23,16,31,0.85);
+    border: 1px solid var(--card-border); border-radius: 20px; padding: 2px 8px 2px 2px;
+  }
+
+  .icon-btn{
+    width:36px; height:36px; border-radius:50%; border:none;
+    background:transparent; color:var(--text); font-size:1.1rem;
+    display:flex; align-items:center; justify-content:center; cursor:pointer;
+  }
+  .icon-btn.muted{ opacity:0.5; }
+
+  .music-slider { width: 65px; accent-color: var(--grad-b); cursor: pointer; }
+
+  .wordmark{ display:flex; align-items:center; justify-content:center; gap:8px; margin:0 0 4px; font-size:1.9rem; font-weight:700; }
+  .wordmark .grad{ background:linear-gradient(135deg,var(--grad-a),var(--grad-b)); -webkit-background-clip:text; background-clip:text; color:transparent; }
+  .subtitle{ color:var(--muted); font-size:0.92rem; margin:0 0 22px; }
+
+  .screen{ display:none; }
+  .screen.active{ display:block; animation:screenIn 0.35s cubic-bezier(.2,.8,.2,1); }
+  @keyframes screenIn{ from{ opacity:0; transform:translateY(14px);} to{ opacity:1; transform:translateY(0);} }
+
+  .input-group{ display:flex; flex-direction:column; gap:13px; margin-bottom:16px; }
+
+  input,textarea{
+    background:#100a17; border:2px solid #2a2035; color:var(--text);
+    padding:14px 16px; border-radius:14px; font-size:1rem; outline:none;
+    width:100%; font-family:inherit;
+  }
+  input:focus,textarea:focus{ border-color:var(--grad-a); }
+  textarea{ resize:none; height:104px; }
+
+  .profile-preview {
+    width: 76px; height: 76px; border-radius: 50%; background: #100a17;
+    border: 2px dashed var(--grad-a); display: flex; align-items: center; justify-content: center;
+    cursor: pointer; overflow: hidden; margin: 0 auto 16px;
+  }
+  .profile-preview img { width: 100%; height: 100%; object-fit: cover; }
+
+  .btn{
+    background:linear-gradient(135deg,var(--grad-a),var(--grad-b)); color:#fff; border:none;
+    padding:15px 20px; font-size:1.02rem; font-weight:700; border-radius:50px;
+    cursor:pointer; width:100%; box-shadow:0 8px 22px rgba(139,92,246,0.35);
+  }
+  .btn:active{ transform:scale(0.96); }
+
+  .list-box{
+    list-style:none; padding:0; margin:0 0 18px; background:#100a17;
+    border-radius:16px; max-height:190px; overflow-y:auto; text-align:left;
+  }
+  .list-box li{
+    padding:12px 16px; border-bottom:1px solid #221830; font-size:1rem;
+    display:flex; justify-content:space-between; align-items:center; gap:10px;
+  }
+  .list-box li:last-child{ border-bottom:none; }
+
+  .player-name{ display:flex; align-items:center; gap:10px; flex:1; min-width:0; }
+  .avatar{
+    width:32px; height:32px; border-radius:50%; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center;
+    font-size:0.85rem; font-weight:700; color:#0b0713; overflow:hidden;
+  }
+  .avatar img { width: 100%; height: 100%; object-fit: cover; }
+
+  .voice-panel{
+    position:fixed; top:calc(var(--safe-t) + 60px); right:calc(var(--safe-r) + 14px);
+    z-index:5; display:flex; flex-direction:column; align-items:flex-end; gap:6px;
+  }
+  .voice-player{
+    display:flex; align-items:center; gap:8px; background:rgba(23,16,31,0.85);
+    border:1px solid var(--card-border); border-radius:20px; padding:4px 10px;
+    font-size:0.85rem;
+  }
+  .voice-slider{ width:60px; accent-color:#8b5cf6; cursor:pointer; }
+
+  .wop-toggle{ display:flex; gap:10px; margin-bottom:18px; }
+  .wop-btn{ flex:1; min-height:64px; border-radius:16px; border:none; font-size:1.1rem; font-weight:700; cursor:pointer; color:#fff; }
+  .wop-wahrheit{ background:#2dd4bf; }
+  .wop-pflicht{ background:#fb7185; }
+
+  .task-card{ background:#171025; padding:24px; border-radius:22px; border:1px solid var(--card-border); margin-top:10px; }
+  .task-type{ display:inline-block; font-size:0.8rem; font-weight:700; padding:4px 10px; border-radius:12px; margin-bottom:10px; }
+  .task-type.wahrheit-tag{ background:rgba(45,212,191,0.2); color:var(--wahrheit); }
+  .task-type.pflicht-tag{ background:rgba(251,113,133,0.2); color:var(--pflicht); }
+  .task-text{ font-size:1.2rem; font-weight:500; margin-bottom:16px; }
+
+  .status-tag { font-size: 0.75rem; color: #fb7185; font-weight: bold; margin-left: auto; }
+  .min-players-warn { font-size:0.85rem; color:var(--danger); margin-bottom:12px; font-weight:600; }
+</style>
+</head>
+<body>
+
+<!-- Code Oben Links -->
+<div class="top-left-code" id="top-left-code" onclick="copyRoomCode()">
+  Code: <span id="top-code-val">----</span> 📋
+</div>
+
+<!-- Steuerung Oben Rechts -->
+<div class="top-right-bar">
+  <button class="icon-btn muted" id="voice-toggle" onclick="toggleVoiceChat()" title="Voice Chat">🎙️</button>
+  <div class="music-control-wrapper">
+    <button class="icon-btn muted" id="music-toggle" onclick="toggleMusic()" title="Musik An/Aus">🎵</button>
+    <input type="range" class="music-slider" id="music-volume" min="0" max="100" step="1" value="30" oninput="setMusicVolume(this.value)">
+  </div>
+</div>
+
+<div class="voice-panel" id="voice-panel"></div>
+
+<audio id="bgMusic" loop>
+    <source src="Truth or Dare.mp3" type="audio/mpeg">
+</audio>
+
+<div class="blob blob-1"></div>
+<div class="blob blob-2"></div>
+<div class="blob blob-3"></div>
+
+<div class="container">
+
+  <!-- 1. START -->
+  <div id="screen-start" class="screen active">
+    <div class="wordmark"><span class="display grad">WoP</span> für friends 🎲</div>
+    <p class="subtitle">Wahrheit oder Pflicht, live mit deinen Leuten.</p>
+
+    <div class="profile-preview" onclick="document.getElementById('avatar-input').click()">
+      <span id="avatar-placeholder" style="font-size:1.8rem;">👤</span>
+      <img id="avatar-img" src="" alt="Avatar" style="display:none;">
+    </div>
+    <input type="file" id="avatar-input" accept="image/*" style="display:none;" onchange="handleAvatarUpload(event)">
+
+    <div class="input-group">
+      <input type="text" id="player-name" placeholder="Dein Name" maxlength="20">
+      <input type="text" id="player-code" placeholder="Raum-Code (leer = Erstellen)" maxlength="4" style="text-transform:uppercase; text-align:center; font-weight:700;">
+    </div>
+    <button class="btn" id="start-action-btn" onclick="startAction()">Los geht's</button>
+  </div>
+
+  <!-- 2. LOBBY -->
+  <div id="screen-lobby" class="screen">
+    <h1 class="display">Lobby</h1>
+    <p class="subtitle" style="margin-bottom:10px;">Spieler im Raum:</p>
+    <ul id="lobby-list" class="list-box"></ul>
+
+    <div id="host-controls" style="display:none;">
+      <p id="min-warn" class="min-players-warn" style="display:none;">Es werden mindestens 2 Spieler benötigt!</p>
+      <p style="font-size:0.9rem; color:var(--muted);">Startperson wählen:</p>
+      <ul id="host-starter-list" class="list-box"></ul>
+    </div>
+    <p id="client-wait-text" style="color:var(--muted); font-size:0.9rem; display:none;">Warte auf den Host …</p>
+  </div>
+
+  <!-- 3a. KATEGORIE -->
+  <div id="screen-kategorie" class="screen">
+    <h1 class="display">Du bist dran! ✨</h1>
+    <div class="wop-toggle">
+      <button class="wop-btn wop-wahrheit" onclick="chooseCategory('Wahrheit')">Wahrheit 💚</button>
+      <button class="wop-btn wop-pflicht" onclick="chooseCategory('Pflicht')">Pflicht ❤️</button>
+    </div>
+  </div>
+
+  <!-- 3b. EINGABE -->
+  <div id="screen-eingabe" class="screen">
+    <h1 class="display">Aufgabe eingeben</h1>
+    <p id="eingabe-info" style="color:var(--muted); margin-bottom:12px;"></p>
+    <textarea id="task-input" placeholder="Schreib etwas Kreatives …"></textarea>
+    <button class="btn" style="margin-top:12px;" onclick="sendTask()">Senden 🚀</button>
+  </div>
+
+  <!-- 3c. WARTEN -->
+  <div id="screen-warten" class="screen">
+    <h1 class="display">Warten … ⏳</h1>
+    <p id="warten-info" style="color:var(--muted);"></p>
+  </div>
+
+  <!-- 4. ANZEIGE -->
+  <div id="screen-anzeige" class="screen">
+    <h1 class="display" id="anzeige-header">Aufgabe</h1>
+    <div class="task-card">
+      <span class="task-type" id="display-type">–</span>
+      <div class="task-text" id="display-text">…</div>
+
+      <div id="answer-area" style="display:none;">
+        <textarea id="answer-input" placeholder="Deine Antwort …"></textarea>
+        <button class="btn" id="answer-btn" style="margin-top:8px;" onclick="sendAnswer()">Antwort absenden</button>
+      </div>
+
+      <button class="btn" id="erledigt-btn" style="display:none; margin-top:12px; background:linear-gradient(135deg,#fbbf24,#f59e0b);" onclick="clickErledigt()">Fertig / Weiter ✅</button>
+    </div>
+  </div>
+
+  <!-- 5. AUSWAHL -->
+  <div id="screen-auswahl" class="screen">
+    <h1 class="display">Nächste Person!</h1>
+    <p style="font-size:0.85rem; color:var(--muted); margin-bottom:10px;" id="last-player-note"></p>
+    <ul id="auswahl-list" class="list-box"></ul>
+  </div>
+
+</div>
+
+<script>
+  const APP_PREFIX = 'wopfriends-v2-';
+  const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+  let peer = null;
+  let myName = '';
+  let myRoom = '';
+  let hostId = '';
+  let isHost = false;
+  let hostConn = null;
+  let conns = {};
+  let players = [];
+  let activePlayer = '';
+  let lastPlayer = '';
+  let roundCategory = '';
+  let currentTask = null;
+  let myAvatarData = localStorage.getItem('wop_avatar') || null;
+
+  let voiceEnabled = false;
+  let localStream = null;
+  let voiceCalls = {};
+  let voiceVolumes = {};
+
+  function initAvatar() {
+    if (myAvatarData) {
+      document.getElementById('avatar-img').src = myAvatarData;
+      document.getElementById('avatar-img').style.display = 'block';
+      document.getElementById('avatar-placeholder').style.display = 'none';
+    }
+  }
+
+  function handleAvatarUpload(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      myAvatarData = e.target.result;
+      localStorage.setItem('wop_avatar', myAvatarData);
+      document.getElementById('avatar-img').src = myAvatarData;
+      document.getElementById('avatar-img').style.display = 'block';
+      document.getElementById('avatar-placeholder').style.display = 'none';
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function setScreen(id){
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+  }
+
+  function toggleMusic(){
+    const music = document.getElementById('bgMusic');
+    const btn = document.getElementById('music-toggle');
+
+    if (music.paused){
+      music.play().catch(()=>{});
+      btn.classList.remove('muted');
+    } else {
+      music.pause();
+      btn.classList.add('muted');
+    }
+  }
+
+  function setMusicVolume(val){
+    const music = document.getElementById('bgMusic');
+    music.volume = val / 100;
+  }
+
+  function startAction(){
+    const name = document.getElementById('player-name').value.trim();
+    const code = document.getElementById('player-code').value.trim().toUpperCase();
+    if (!name) return alert('Name eingeben!');
+    myName = name;
+
+    if (!code) createRoom();
+    else joinRoom(code);
+  }
+
+  function createRoom(){
+    const code = Array.from({length:4}, () => CODE_CHARS[Math.floor(Math.random()*CODE_CHARS.length)]).join('');
+    myRoom = code;
+    isHost = true;
+    
+    peer = new Peer(APP_PREFIX + code);
+    peer.on('open', (id) => {
+      hostId = id;
+      players = [{ id: id, name: myName, avatar: myAvatarData, isHost: true }];
+      showRoomCodeUI();
+      setScreen('screen-lobby');
+      renderLobby();
+    });
+
+    peer.on('connection', setupHostConn);
+    setupVoiceHandler();
+  }
+
+  function joinRoom(code){
+    myRoom = code;
+    isHost = false;
+    peer = new Peer();
+
+    peer.on('open', () => {
+      hostConn = peer.connect(APP_PREFIX + code);
+      hostConn.on('open', () => {
+        hostConn.send({ type: 'join', name: myName, avatar: myAvatarData });
+        showRoomCodeUI();
+        setScreen('screen-lobby');
+      });
+      hostConn.on('data', handleClientData);
+      hostConn.on('close', () => alert('Verbindung zum Host verloren!'));
+    });
+    setupVoiceHandler();
+  }
+
+  function showRoomCodeUI(){
+    document.getElementById('top-left-code').style.display = 'block';
+    document.getElementById('top-code-val').innerText = myRoom;
+  }
+
+  function copyRoomCode(){
+    navigator.clipboard.writeText(myRoom);
+    alert('Raum-Code kopiert: ' + myRoom);
+  }
+
+  function setupHostConn(conn){
+    conn.on('data', (data) => {
+      if (data.type === 'join') {
+        conns[conn.peer] = conn;
+        players.push({ id: conn.peer, name: data.name, avatar: data.avatar, isHost: false });
+        broadcastState();
+        renderLobby();
+        
+        if (activePlayer) {
+          conn.send({ type: 'sync_state', activePlayer, roundCategory, currentTask });
+        }
+      } else {
+        handleClientData(data);
+        relay(data, conn.peer);
+      }
+    });
+
+    conn.on('close', () => {
+      delete conns[conn.peer];
+      const p = players.find(x => x.id === conn.peer);
+      if (p) p.afk = true;
+      broadcastState();
+      renderLobby();
+    });
+  }
+
+  function relay(msg, senderId){
+    Object.keys(conns).forEach(id => {
+      if (id !== senderId && conns[id].open) conns[id].send(msg);
+    });
+  }
+
+  function broadcastState(){
+    const data = { type: 'players', list: players };
+    relay(data, null);
+    applyData(data);
+  }
+
+  function handleClientData(data){
+    applyData(data);
+  }
+
+  function applyData(msg){
+    if (msg.type === 'players'){
+      players = msg.list;
+      renderLobby();
+      renderVoicePanel();
+    } else if (msg.type === 'game_start' || msg.type === 'next_round'){
+      lastPlayer = activePlayer;
+      activePlayer = msg.activePlayer;
+      enterRound();
+    } else if (msg.type === 'category_chosen'){
+      roundCategory = msg.category;
+      enterEingabe();
+    } else if (msg.type === 'task_submitted'){
+      currentTask = msg;
+      showTask(msg);
+    } else if (msg.type === 'task_completed'){
+      if (myName === activePlayer) {
+        renderAuswahl();
+        setScreen('screen-auswahl');
+      } else {
+        document.getElementById('warten-info').innerText = `${activePlayer} wählt die nächste Person...`;
+        setScreen('screen-warten');
+      }
+    } else if (msg.type === 'sync_state'){
+      activePlayer = msg.activePlayer;
+      roundCategory = msg.roundCategory;
+      if (msg.currentTask) showTask(msg.currentTask);
+    }
+  }
+
+  function renderLobby(){
+    const list = document.getElementById('lobby-list');
+    list.innerHTML = '';
+    players.forEach(p => {
+      const li = document.createElement('li');
+      li.innerHTML = `
+        <div class="player-name">
+          <div class="avatar">${p.avatar ? `<img src="${p.avatar}">` : p.name[0]}</div>
+          <span>${p.name} ${p.isHost ? '👑' : ''} ${p.name === myName ? '(Du)' : ''}</span>
+          ${p.afk ? `<span class="status-tag">AFK</span>` : ''}
+        </div>
+      `;
+      list.appendChild(li);
+    });
+
+    if (isHost){
+      document.getElementById('host-controls').style.display = 'block';
+      const warn = document.getElementById('min-warn');
+      const activeCount = players.filter(p => !p.afk).length;
+      
+      if (activeCount < 2) {
+        warn.style.display = 'block';
+      } else {
+        warn.style.display = 'none';
+      }
+
+      const sList = document.getElementById('host-starter-list');
+      sList.innerHTML = '';
+      players.forEach(p => {
+        const li = document.createElement('li');
+        const canStart = activeCount >= 2;
+        li.innerHTML = `<span>${p.name}</span> <button class="btn" style="padding:4px 12px; width:auto; ${!canStart ? 'opacity:0.5; cursor:not-allowed;' : ''}" ${canStart ? `onclick="startGame('${p.name}')"` : 'disabled'}>Start</button>`;
+        sList.appendChild(li);
+      });
+    } else {
+      document.getElementById('client-wait-text').style.display = 'block';
+    }
+  }
+
+  function startGame(starter){
+    if (players.filter(p => !p.afk).length < 2) {
+      return alert('Es müssen mindestens 2 aktive Spieler im Raum sein!');
+    }
+    sendData({ type: 'game_start', activePlayer: starter });
+  }
+
+  function sendData(msg){
+    if (isHost){
+      relay(msg, null);
+      applyData(msg);
+    } else if (hostConn) {
+      hostConn.send(msg);
+    }
+  }
+
+  function enterRound(){
+    currentTask = null;
+    if (myName === activePlayer){
+      setScreen('screen-kategorie');
+    } else {
+      document.getElementById('warten-info').innerText = `${activePlayer} wählt Wahrheit oder Pflicht...`;
+      setScreen('screen-warten');
+    }
+  }
+
+  function chooseCategory(cat){
+    sendData({ type: 'category_chosen', category: cat });
+  }
+
+  function enterEingabe(){
+    if (myName === activePlayer){
+      document.getElementById('warten-info').innerText = `Jemand schreibt eine ${roundCategory}-Aufgabe für dich...`;
+      setScreen('screen-warten');
+    } else {
+      document.getElementById('eingabe-info').innerText = `${roundCategory} für ${activePlayer}:`;
+      setScreen('screen-eingabe');
+    }
+  }
+
+  function sendTask(){
+    const text = document.getElementById('task-input').value.trim();
+    if (!text) return;
+    sendData({ type: 'task_submitted', category: roundCategory, text: text });
+    document.getElementById('task-input').value = '';
+  }
+
+  function showTask(task){
+    document.getElementById('display-type').innerText = task.category;
+    document.getElementById('display-type').className = 'task-type ' + (task.category === 'Wahrheit' ? 'wahrheit-tag' : 'pflicht-tag');
+    document.getElementById('display-text').innerText = task.text;
+
+    const isMe = myName === activePlayer;
+    if (isMe){
+      if (task.category === 'Wahrheit'){
+        document.getElementById('answer-area').style.display = 'block';
+        document.getElementById('answer-input').value = '';
+        document.getElementById('erledigt-btn').style.display = 'none';
+      } else {
+        // Bei Pflicht direkt Fertig-Button anzeigen
+        document.getElementById('answer-area').style.display = 'none';
+        document.getElementById('erledigt-btn').style.display = 'block';
+      }
+    } else {
+      document.getElementById('answer-area').style.display = 'none';
+      document.getElementById('erledigt-btn').style.display = 'none';
+    }
+    setScreen('screen-anzeige');
+  }
+
+  function sendAnswer(){
+    const text = document.getElementById('answer-input').value.trim();
+    if (!text) return;
+    // Bei Wahrheit nach Antwort Fertig-Button anzeigen
+    document.getElementById('answer-area').style.display = 'none';
+    document.getElementById('erledigt-btn').style.display = 'block';
+  }
+
+  function clickErledigt(){
+    sendData({ type: 'task_completed' });
+  }
+
+  function renderAuswahl(){
+    document.getElementById('last-player-note').innerText = lastPlayer ? `Letzte Runde war: ${lastPlayer}` : '';
+    const list = document.getElementById('auswahl-list');
+    list.innerHTML = '';
+    players.filter(p => p.name !== myName).forEach(p => {
+      const li = document.createElement('li');
+      li.innerHTML = `<span>${p.name}</span> <button class="btn" style="padding:4px 12px; width:auto;" onclick="selectNext('${p.name}')">Wählen</button>`;
+      list.appendChild(li);
+    });
+  }
+
+  function selectNext(name){
+    sendData({ type: 'next_round', activePlayer: name });
+  }
+
+  function setupVoiceHandler(){
+    peer.on('call', (call) => {
+      if (voiceEnabled && localStream) {
+        call.answer(localStream);
+        handleVoiceStream(call);
+      }
+    });
+  }
+
+  function toggleVoiceChat(){
+    const btn = document.getElementById('voice-toggle');
+    if (!voiceEnabled) {
+      navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+        localStream = stream;
+        voiceEnabled = true;
+        btn.classList.remove('muted');
+        callAllVoice();
+        renderVoicePanel();
+      }).catch(() => alert('Mikrofon-Zugriff verweigert!'));
+    } else {
+      voiceEnabled = false;
+      btn.classList.add('muted');
+      if (localStream) localStream.getTracks().forEach(t => t.stop());
+      renderVoicePanel();
+    }
+  }
+
+  function callAllVoice(){
+    players.forEach(p => {
+      if (p.id !== peer.id && !voiceCalls[p.id]){
+        const call = peer.call(p.id, localStream);
+        if (call) handleVoiceStream(call);
+      }
+    });
+  }
+
+  function handleVoiceStream(call){
+    voiceCalls[call.peer] = call;
+    call.on('stream', remoteStream => {
+      let audio = document.getElementById('v-' + call.peer);
+      if (!audio) {
+        audio = document.createElement('audio');
+        audio.id = 'v-' + call.peer;
+        audio.autoplay = true;
+        document.body.appendChild(audio);
+      }
+      audio.srcObject = remoteStream;
+    });
+  }
+
+  function renderVoicePanel(){
+    const panel = document.getElementById('voice-panel');
+    panel.innerHTML = '';
+    if (!voiceEnabled) return;
+
+    players.forEach(p => {
+      if (p.id === peer.id) return;
+      const div = document.createElement('div');
+      div.className = 'voice-player';
+      const currentVol = voiceVolumes[p.id] !== undefined ? voiceVolumes[p.id] : 100;
+      div.innerHTML = `
+        <span>🗣️ ${p.name}</span>
+        <input type="range" class="voice-slider" min="0" max="100" step="1" value="${currentVol}" oninput="setVolume('${p.id}', this.value)">
+      `;
+      panel.appendChild(div);
+    });
+  }
+
+  function setVolume(id, val){
+    voiceVolumes[id] = val;
+    const audio = document.getElementById('v-' + id);
+    if (audio) audio.volume = val / 100;
+  }
+
+  window.addEventListener('DOMContentLoaded', initAvatar);
+</script>
+</body>
+</html>
