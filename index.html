@@ -95,6 +95,9 @@
   .icon-btn:hover { background:rgba(255,255,255,0.18); }
   .icon-btn.active-mic { background: rgba(236, 72, 153, 0.4); }
   .icon-btn.muted-mic { background: rgba(251, 113, 133, 0.4); color: var(--danger); }
+  .top-profile-btn{ width:36px; height:36px; padding:0; overflow:hidden; border:2px solid rgba(255,255,255,.18); }
+  .top-profile-btn img{ width:100%; height:100%; object-fit:cover; }
+  .top-profile-placeholder{ font-size:1.05rem; }
 
   .volume-wrapper {
     display: flex; align-items: center; gap: 6px;
@@ -174,6 +177,8 @@
     cursor: pointer; font-weight: 600; flex-shrink: 0;
   }
   .btn-subtle:hover { background: rgba(255,255,255,0.25); }
+  .btn-kick{ color:#fbbf24; }
+  .btn-ban{ color:var(--danger); }
 
   .list-box{
     list-style:none; padding:0; margin:0 0 18px; background:#100a17;
@@ -233,6 +238,10 @@
 
 <div class="right-side-panel">
   <div class="top-controls-row">
+    <button class="icon-btn top-profile-btn" onclick="document.getElementById('avatar-input').click()" title="Profilbild ändern">
+      <span class="top-profile-placeholder" id="top-profile-placeholder">👤</span>
+      <img id="top-profile-img" src="" alt="Dein Profilbild" style="display:none;">
+    </button>
     <button class="icon-btn muted-mic" id="mic-mute-btn" onclick="toggleMicMute()" title="Mikrofon An/Aus">🔇</button>
 
     <div class="volume-wrapper">
@@ -356,6 +365,7 @@
   let roundCategory = '';
   let currentTask = null;
   const REACTION_EMOJIS = ['🤣', '😭', '🥳', '🤬', '❤️', '😅', '🤫', '😶', '😮'];
+  let bannedNames = [];
   let myAvatarData = localStorage.getItem('wop_avatar') || null;
 
   let isMicMuted = true;
@@ -373,6 +383,9 @@
       document.getElementById('avatar-img').src = myAvatarData;
       document.getElementById('avatar-img').style.display = 'block';
       document.getElementById('avatar-placeholder').style.display = 'none';
+      document.getElementById('top-profile-img').src = myAvatarData;
+      document.getElementById('top-profile-img').style.display = 'block';
+      document.getElementById('top-profile-placeholder').style.display = 'none';
     }
   }
 
@@ -386,6 +399,9 @@
       document.getElementById('avatar-img').src = myAvatarData;
       document.getElementById('avatar-img').style.display = 'block';
       document.getElementById('avatar-placeholder').style.display = 'none';
+      document.getElementById('top-profile-img').src = myAvatarData;
+      document.getElementById('top-profile-img').style.display = 'block';
+      document.getElementById('top-profile-placeholder').style.display = 'none';
       if (peer) {
         const p = players.find(x => x.id === peer.id);
         if (p) {
@@ -508,6 +524,11 @@
   function setupHostConn(conn){
     conn.on('data', (data) => {
       if (data.type === 'join') {
+        if (bannedNames.includes(data.name.trim().toLowerCase())) {
+          conn.send({ type: 'removed', reason: 'Du wurdest aus diesem Raum gebannt.' });
+          setTimeout(() => conn.close(), 150);
+          return;
+        }
         conns[conn.peer] = conn;
         players.push({ id: conn.peer, name: data.name, avatar: data.avatar, isHost: false });
         broadcastState();
@@ -610,6 +631,11 @@
       currentTask.reactions = currentTask.reactions || {};
       currentTask.reactions[msg.emoji] = (currentTask.reactions[msg.emoji] || 0) + 1;
       renderEmojiBar();
+    } else if (msg.type === 'removed'){
+      alert(msg.reason || 'Du wurdest aus dem Raum entfernt.');
+      if (hostConn) hostConn.close();
+      document.getElementById('top-left-code').style.display = 'none';
+      setScreen('screen-start');
     } else if (msg.type === 'sync_state'){
       activePlayer = msg.activePlayer;
       roundCategory = msg.roundCategory;
@@ -698,6 +724,7 @@
               ${isMuted ? '🔇' : '🎙️'}
             </button>
             <input type="range" class="sidebar-volume-slider" min="0" max="300" step="1" value="${isMuted ? 0 : currentVol}" oninput="setVoiceVolume('${p.id}', this.value)">
+            ${isHost ? `<button class="btn-subtle btn-kick" onclick="kickPlayer('${p.id}')" title="Aus dem Raum entfernen">👢</button><button class="btn-subtle btn-ban" onclick="banPlayer('${p.id}')" title="Aus diesem Raum bannen">🚫</button>` : ''}
           </div>
         ` : ''}
       `;
@@ -723,6 +750,34 @@
       audio.muted = voiceMuted[id];
     }
     renderRightSidebar();
+  }
+
+  function kickPlayer(id){
+    if (!isHost) return;
+    removePlayer(id, false);
+  }
+
+  function banPlayer(id){
+    if (!isHost) return;
+    const player = players.find(p => p.id === id);
+    if (!player || !confirm(`${player.name} wirklich bannen?`)) return;
+    removePlayer(id, true);
+  }
+
+  function removePlayer(id, ban){
+    const player = players.find(p => p.id === id);
+    if (!player || player.isHost) return;
+    if (ban) bannedNames.push(player.name.trim().toLowerCase());
+    const connection = conns[id];
+    if (connection && connection.open) {
+      connection.send({ type: 'removed', reason: ban ? 'Du wurdest aus diesem Raum gebannt.' : 'Du wurdest aus dem Raum entfernt.' });
+    }
+    delete conns[id];
+    players = players.filter(p => p.id !== id);
+    broadcastState();
+    renderLobby();
+    renderRightSidebar();
+    if (connection) setTimeout(() => connection.close(), 150);
   }
 
   function startGame(starter){
