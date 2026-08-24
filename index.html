@@ -255,8 +255,8 @@
 
     <div class="volume-wrapper">
       <button class="icon-btn" id="music-toggle" onclick="toggleMusic()" title="Musik An/Aus">🎵</button>
-      <input type="range" class="volume-slider" id="music-volume" min="0" max="300" step="1" value="300" oninput="setMusicVolume(this.value)">
-      <span class="vol-label" id="music-vol-val">300%</span>
+      <input type="range" class="volume-slider" id="music-volume" min="0" max="100" step="1" value="70" oninput="setMusicVolume(this.value)">
+      <span class="vol-label" id="music-vol-val">70%</span>
     </div>
   </div>
 
@@ -463,14 +463,15 @@
 
   function setMusicVolume(val){
     document.getElementById('music-vol-val').innerText = val + '%';
-    const gainValue = val / 100;
+    // Über 100 % kann der Ton auf Handy-Lautsprechern verzerren/knirschen.
+    const gainValue = Math.min(1, Number(val) / 100);
     if (musicGainNode) {
       musicGainNode.gain.value = gainValue;
     } else {
       const music = document.getElementById('bgMusic');
       music.volume = Math.min(1, gainValue);
     }
-    const pct = (val / 300) * 100;
+    const pct = Number(val);
     const slider = document.getElementById('music-volume');
     slider.style.background = `linear-gradient(to right, #ec4899 0%, #ec4899 ${pct}%, #2a2035 ${pct}%, #2a2035 100%)`;
   }
@@ -639,6 +640,9 @@
       if (me) isHost = !!me.isHost;
       renderLobby();
       renderRightSidebar();
+      // Wer schon das Mikrofon aktiviert hat, verbindet sich auch mit
+      // Spielern, die erst später dem Raum beigetreten sind.
+      if (localStream) callAllVoice();
     } else if (msg.type === 'game_start' || msg.type === 'next_round'){
       lastPlayer = activePlayer;
       activePlayer = msg.activePlayer;
@@ -753,7 +757,7 @@
       const isMe = p.id === peer?.id || p.name === myName;
       card.className = 'sidebar-player-card';
 
-      const currentVol = voiceVolumes[p.id] !== undefined ? voiceVolumes[p.id] : 300;
+      const currentVol = voiceVolumes[p.id] !== undefined ? voiceVolumes[p.id] : 100;
       const isMuted = voiceMuted[p.id] || false;
 
       card.innerHTML = `
@@ -768,7 +772,7 @@
             <button class="icon-btn" onclick="toggleMutePlayer('${p.id}')" title="Mute Player" style="width:24px; height:24px; font-size:0.75rem;">
               ${isMuted ? '🔇' : '🎙️'}
             </button>
-            <input type="range" class="sidebar-volume-slider" min="0" max="300" step="1" value="${isMuted ? 0 : currentVol}" oninput="setVoiceVolume('${p.id}', this.value)">
+            <input type="range" class="sidebar-volume-slider" min="0" max="100" step="1" value="${isMuted ? 0 : currentVol}" oninput="setVoiceVolume('${p.id}', this.value)">
             ${isHost ? `<button class="btn-subtle btn-kick" onclick="kickPlayer('${p.id}')" title="Aus dem Raum entfernen">👢</button>` : ''}
             ${!p.isHost ? `<button class="btn-subtle btn-ban" onclick="voteBan('${p.id}')" title="Für einen Ban abstimmen">🗳️ ${banVoteState[p.id] ? `${banVoteState[p.id].count}/${banVoteState[p.id].needed}` : ''}</button>` : ''}
           </div>
@@ -973,10 +977,13 @@
 
   function setupVoiceHandler(){
     peer.on('call', (call) => {
-      if (localStream) {
-        call.answer(localStream);
-        handleVoiceStream(call);
-      }
+      // Auch ohne eigenes Mikrofon antworten: So kann man auf dem Handy
+      // zuhören, bevor man selbst etwas sagen möchte.
+      call.answer(localStream || undefined);
+      handleVoiceStream(call);
+    });
+    peer.on('error', (error) => {
+      console.warn('Voice/Verbindungsfehler:', error);
     });
   }
 
@@ -1017,21 +1024,27 @@
 
   function handleVoiceStream(call){
     voiceCalls[call.peer] = call;
+    call.on('close', () => { delete voiceCalls[call.peer]; });
     call.on('stream', remoteStream => {
       let audio = document.getElementById('v-' + call.peer);
       if (!audio) {
         audio = document.createElement('audio');
         audio.id = 'v-' + call.peer;
         audio.autoplay = true;
+        audio.playsInline = true;
         document.body.appendChild(audio);
       }
       audio.srcObject = remoteStream;
+      audio.play().catch(() => {
+        // Mobilgeräte erlauben Audio erst nach einer Berührung. Der
+        // Mikrofon-Button dient dabei als bewusste Aktivierung durch die Person.
+      });
     });
   }
 
   window.addEventListener('DOMContentLoaded', () => {
     initAvatar();
-    setMusicVolume(300);
+    setMusicVolume(70);
   });
 </script>
 </body>
