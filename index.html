@@ -662,7 +662,7 @@
       players.forEach(p => {
         const li = document.createElement('li');
         const canStart = activeCount >= 2;
-        li.innerHTML = `<span>${p.name}</span> <button class="btn" style="padding:4px 12px; width:auto; ${!canStart ? 'opacity:0.5; cursor:not-allowed;' : ''}" ${canStart ? `onclick="startGame('${p.name}')"` : 'disabled'}>Start</button>`;
+        li.innerHTML = `<span>${p.name}</span> <button class="btn" style="padding:4px 12px; width:auto; ${!canStart ? 'opacity:0.5; cursor:not-allowed;' : ''}" ${canStart ? `onclick="startGame('${p.name.replace(/'/g, "\\'")}')"` : 'disabled'}>Start</button>`;
         sList.appendChild(li);
       });
     } else {
@@ -710,34 +710,61 @@
   }
 
   function kickPlayer(id) {
-    if (!isHost) return;
-    const p = players.find(x => x.id === id);
-    if (!p || !confirm(`${p.name} wirklich aus dem Raum kicken?`)) return;
+    if (!isHost) {
+      alert('Nur der Host kann Spieler kicken!');
+      return;
+    }
 
-    if (conns[id] && conns[id].open) conns[id].send({ type: 'kicked' });
+    const p = players.find(x => x.id === id);
+    if (!p) return alert('Spieler wurde nicht gefunden.');
+    if (!confirm(`${p.name} wirklich aus dem Raum kicken?`)) return;
+
+    const conn = conns[id];
+    if (conn && conn.open) conn.send({ type: 'kicked' });
     if (voiceCalls[id]) voiceCalls[id].close();
 
     players = players.filter(x => x.id !== id);
     delete conns[id];
+
+    // Verbindung nach der Nachricht schließen, damit der Kick sofort greift.
+    setTimeout(() => {
+      if (conn && conn.open) conn.close();
+    }, 150);
+
     broadcastState();
+    renderLobby();
     renderRightSidebar();
   }
 
   function banPlayer(id) {
-    if (!isHost) return;
-    const p = players.find(x => x.id === id);
-    if (!p || !confirm(`${p.name} wirklich aus diesem Raum bannen?`)) return;
+    if (!isHost) {
+      alert('Nur der Host kann Spieler bannen!');
+      return;
+    }
 
+    const p = players.find(x => x.id === id);
+    if (!p) return alert('Spieler wurde nicht gefunden.');
+    if (!confirm(`${p.name} wirklich aus diesem Raum bannen?`)) return;
+
+    // Ban direkt beim Host speichern.
     bannedNames.add(p.name);
     localStorage.setItem('wop_bans_' + myRoom, JSON.stringify([...bannedNames]));
 
-    if (conns[id] && conns[id].open) conns[id].send({ type: 'banned' });
+    const conn = conns[id];
+    if (conn && conn.open) conn.send({ type: 'banned' });
     if (voiceCalls[id]) voiceCalls[id].close();
 
     players = players.filter(x => x.id !== id);
     delete conns[id];
+
+    setTimeout(() => {
+      if (conn && conn.open) conn.close();
+    }, 150);
+
     broadcastState();
+    renderLobby();
     renderRightSidebar();
+    alert(`${p.name} wurde gebannt!`);
   }
 
   function toggleMutePlayer(id){
@@ -761,9 +788,24 @@
   }
 
   function startGame(starter){
-    if (players.filter(p => !p.afk).length < 2) {
-      return alert('Es müssen mindestens 2 aktive Spieler im Raum sein!');
+    const activePlayers = players.filter(p => !p.afk);
+
+    if (activePlayers.length < 2) {
+      alert('Es müssen mindestens 2 aktive Spieler im Raum sein!');
+      return;
     }
+
+    if (!starter) {
+      alert('Bitte zuerst eine Startperson wählen!');
+      return;
+    }
+
+    // Spielzustand lokal setzen und anschließend an alle Spieler senden.
+    activePlayer = starter;
+    lastPlayer = '';
+    roundCategory = '';
+    currentTask = null;
+
     sendData({ type: 'game_start', activePlayer: starter });
   }
 
