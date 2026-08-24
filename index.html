@@ -227,7 +227,16 @@
   }
   .reaction-btn{ border:0; border-radius:14px; background:rgba(255,255,255,.08); color:var(--text); padding:6px 7px; min-width:32px; cursor:pointer; font-size:1.05rem; }
   .reaction-btn:hover{ background:rgba(255,255,255,.18); }
-  .reaction-count{ font-size:.67rem; font-weight:700; vertical-align:middle; margin-left:2px; }
+  .reaction-pop{
+    position:fixed; z-index:30; pointer-events:none; font-size:3.4rem;
+    filter:drop-shadow(0 6px 12px rgba(0,0,0,.45)); animation:reactionPop 2.1s ease-out forwards;
+  }
+  @keyframes reactionPop{
+    0%{ opacity:0; transform:translateY(18px) scale(.45) rotate(-12deg); }
+    16%{ opacity:1; transform:translateY(0) scale(1.2) rotate(6deg); }
+    35%{ transform:translateY(-18px) scale(1); }
+    100%{ opacity:0; transform:translateY(-120px) scale(.78) rotate(12deg); }
+  }
 </style>
 </head>
 <body>
@@ -364,8 +373,11 @@
   let lastPlayer = '';
   let roundCategory = '';
   let currentTask = null;
+  let gamePhase = 'lobby';
   const REACTION_EMOJIS = ['🤣', '😭', '🥳', '🤬', '❤️', '😅', '🤫', '😶', '😮'];
   let bannedNames = [];
+  let banVotes = {};
+  let banVoteState = {};
   let myAvatarData = localStorage.getItem('wop_avatar') || null;
 
   let isMicMuted = true;
@@ -536,12 +548,14 @@
         renderRightSidebar();
         
         if (activePlayer) {
-          conn.send({ type: 'sync_state', activePlayer, roundCategory, currentTask });
+          conn.send({ type: 'sync_state', activePlayer, roundCategory, currentTask, gamePhase });
         }
       } else {
         // Der Host ist die einzige Quelle für den gemeinsamen Spielstand.
         // Dadurch bekommt auch die Person, die etwas abgeschickt hat, ihr Update zurück.
-        if (isValidClientAction(data, conn.peer)) {
+        if (data.type === 'ban_vote') {
+          recordBanVote(conn.peer, data.target);
+        } else if (isValidClientAction(data, conn.peer)) {
           relay(data, null);
           applyData(data);
         }
@@ -591,6 +605,26 @@
     return false;
   }
 
+  function recordBanVote(voterId, targetId){
+    const target = players.find(p => p.id === targetId);
+    const voter = players.find(p => p.id === voterId);
+    if (!target || !voter || targetId === voterId || target.isHost) return;
+    if (!banVotes[targetId]) banVotes[targetId] = new Set();
+    banVotes[targetId].add(voterId);
+    const eligibleVoters = players.filter(p => !p.afk && p.id !== targetId).length;
+    const needed = Math.floor(eligibleVoters / 2) + 1;
+    const count = banVotes[targetId].size;
+    if (count >= needed) {
+      removePlayer(targetId, true);
+      banVotes = {};
+      banVoteState = {};
+      return;
+    }
+    const status = { type: 'ban_vote_status', target: targetId, count, needed };
+    relay(status, null);
+    applyData(status);
+  }
+
   function transferHost(newHostId) {
     players.forEach(p => p.isHost = (p.id === newHostId));
     isHost = (peer.id === newHostId);
@@ -608,17 +642,21 @@
     } else if (msg.type === 'game_start' || msg.type === 'next_round'){
       lastPlayer = activePlayer;
       activePlayer = msg.activePlayer;
+      gamePhase = 'category';
       enterRound();
     } else if (msg.type === 'category_chosen'){
       roundCategory = msg.category;
+      gamePhase = 'task_entry';
       enterEingabe();
     } else if (msg.type === 'task_submitted'){
       currentTask = { type: 'task_submitted', category: msg.category, text: msg.text, answer: '', reactions: {} };
+      gamePhase = 'task_display';
       showTask(currentTask);
     } else if (msg.type === 'answer_submitted'){
       if (!currentTask) return;
       currentTask.answer = msg.text;
       currentTask.answerAuthor = activePlayer;
+      gamePhase = 'next_select';
       showTask(currentTask);
       if (myName === activePlayer) {
         renderAuswahl();
@@ -629,9 +667,10 @@
       }
     } else if (msg.type === 'reaction'){
       if (!currentTask) return;
-      currentTask.reactions = currentTask.reactions || {};
-      currentTask.reactions[msg.emoji] = (currentTask.reactions[msg.emoji] || 0) + 1;
-      renderEmojiBar();
+      showReactionPopup(msg.emoji);
+    } else if (msg.type === 'ban_vote_status'){
+      banVoteState[msg.target] = { count: msg.count, needed: msg.needed };
+      renderRightSidebar();
     } else if (msg.type === 'removed'){
       alert(msg.reason || 'Du wurdest aus dem Raum entfernt.');
       if (hostConn) hostConn.close();
@@ -641,7 +680,12 @@
       activePlayer = msg.activePlayer;
       roundCategory = msg.roundCategory;
       currentTask = msg.currentTask || null;
-      if (currentTask) showTask(currentTask);
+      gamePhase = msg.gamePhase || (currentTask ? 'task_display' : 'category');
+      if (gamePhase === 'task_entry') enterEingabe();
+      else if (gamePhase === 'next_select') {
+        if (myName === activePlayer) { renderAuswahl(); setScreen('screen-auswahl'); }
+        else { document.getElementById('warten-info').innerText = `${activePlayer} wählt die nächste Person...`; setScreen('screen-warten'); }
+      } else if (currentTask) showTask(currentTask);
       else if (activePlayer) enterRound();
     }
   }
@@ -725,7 +769,8 @@
               ${isMuted ? '🔇' : '🎙️'}
             </button>
             <input type="range" class="sidebar-volume-slider" min="0" max="300" step="1" value="${isMuted ? 0 : currentVol}" oninput="setVoiceVolume('${p.id}', this.value)">
-            ${isHost ? `<button class="btn-subtle btn-kick" onclick="kickPlayer('${p.id}')" title="Aus dem Raum entfernen">👢</button><button class="btn-subtle btn-ban" onclick="banPlayer('${p.id}')" title="Aus diesem Raum bannen">🚫</button>` : ''}
+            ${isHost ? `<button class="btn-subtle btn-kick" onclick="kickPlayer('${p.id}')" title="Aus dem Raum entfernen">👢</button>` : ''}
+            ${!p.isHost ? `<button class="btn-subtle btn-ban" onclick="voteBan('${p.id}')" title="Für einen Ban abstimmen">🗳️ ${banVoteState[p.id] ? `${banVoteState[p.id].count}/${banVoteState[p.id].needed}` : ''}</button>` : ''}
           </div>
         ` : ''}
       `;
@@ -758,11 +803,10 @@
     removePlayer(id, false);
   }
 
-  function banPlayer(id){
-    if (!isHost) return;
-    const player = players.find(p => p.id === id);
-    if (!player || !confirm(`${player.name} wirklich bannen?`)) return;
-    removePlayer(id, true);
+  function voteBan(id){
+    if (id === peer?.id) return;
+    if (isHost) recordBanVote(peer.id, id);
+    else if (hostConn) hostConn.send({ type: 'ban_vote', target: id });
   }
 
   function removePlayer(id, ban){
@@ -884,14 +928,13 @@
       bar.style.display = 'none';
       return;
     }
-    const reactions = currentTask.reactions || {};
     bar.innerHTML = '';
     REACTION_EMOJIS.forEach(emoji => {
       const button = document.createElement('button');
       button.className = 'reaction-btn';
       button.type = 'button';
       button.title = `${emoji} reagieren`;
-      button.innerHTML = `${emoji}${reactions[emoji] ? `<span class="reaction-count">${reactions[emoji]}</span>` : ''}`;
+      button.textContent = emoji;
       button.onclick = () => sendReaction(emoji);
       bar.appendChild(button);
     });
@@ -901,6 +944,16 @@
   function sendReaction(emoji){
     if (!currentTask) return;
     sendData({ type: 'reaction', emoji });
+  }
+
+  function showReactionPopup(emoji){
+    const pop = document.createElement('div');
+    pop.className = 'reaction-pop';
+    pop.textContent = emoji;
+    pop.style.left = `${18 + Math.random() * 64}%`;
+    pop.style.top = `${42 + Math.random() * 28}%`;
+    document.body.appendChild(pop);
+    setTimeout(() => pop.remove(), 2200);
   }
 
   function renderAuswahl(){
