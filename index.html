@@ -820,6 +820,8 @@
 
   function enterRound(){
     currentTask = null;
+    document.getElementById('answer-area').style.display = 'none';
+    document.getElementById('erledigt-btn').style.display = 'none';
     if (myName === activePlayer){
       setScreen('screen-kategorie');
     } else {
@@ -862,13 +864,7 @@
         document.getElementById('erledigt-btn').style.display = 'none';
       } else {
         document.getElementById('answer-area').style.display = 'none';
-        // Pflicht wird angezeigt; anschließend kann direkt eine nächste Person gewählt werden.
-        setTimeout(() => {
-          if (myName === activePlayer) {
-            renderAuswahl();
-            setScreen('screen-auswahl');
-          }
-        }, 300);
+        document.getElementById('erledigt-btn').style.display = 'block';
       }
     } else {
       document.getElementById('answer-area').style.display = 'none';
@@ -881,12 +877,13 @@
     const text = document.getElementById('answer-input').value.trim();
     if (!text) return;
 
+    // Antwort fertig: alle Spieler werden synchronisiert und die aktive Person darf wählen.
     document.getElementById('answer-area').style.display = 'none';
-    renderAuswahl();
-    setScreen('screen-auswahl');
+    sendData({ type: 'task_completed' });
   }
 
   function clickErledigt(){
+    // Pflicht ist fertig: jetzt geht es für alle weiter.
     sendData({ type: 'task_completed' });
   }
 
