@@ -862,7 +862,13 @@
         document.getElementById('erledigt-btn').style.display = 'none';
       } else {
         document.getElementById('answer-area').style.display = 'none';
-        document.getElementById('erledigt-btn').style.display = 'block';
+        // Pflicht wird angezeigt; anschließend kann direkt eine nächste Person gewählt werden.
+        setTimeout(() => {
+          if (myName === activePlayer) {
+            renderAuswahl();
+            setScreen('screen-auswahl');
+          }
+        }, 300);
       }
     } else {
       document.getElementById('answer-area').style.display = 'none';
@@ -874,8 +880,10 @@
   function sendAnswer(){
     const text = document.getElementById('answer-input').value.trim();
     if (!text) return;
+
     document.getElementById('answer-area').style.display = 'none';
-    document.getElementById('erledigt-btn').style.display = 'block';
+    renderAuswahl();
+    setScreen('screen-auswahl');
   }
 
   function clickErledigt(){
@@ -894,6 +902,7 @@
   }
 
   function selectNext(name){
+    // Die Auswahl ersetzt den alten Fertig/Weiter-Schritt.
     sendData({ type: 'next_round', activePlayer: name });
   }
 
