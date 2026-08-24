@@ -580,7 +580,8 @@
   }
 
   function isValidClientAction(data, peerId){
-    if (data.type === 'category_chosen' || data.type === 'answer_submitted') {
+    if (data.type === 'category_chosen') return !!activePlayer;
+    if (data.type === 'answer_submitted') {
       return isActivePeer(peerId);
     }
     if (data.type === 'next_round') return isActivePeer(peerId);
@@ -808,6 +809,11 @@
   }
 
   function chooseCategory(cat){
+    // Sofort weitergehen, damit die aktive Person nie auf dem Auswahlbildschirm
+    // hängen bleibt. Der Host bestätigt dieselbe Auswahl anschließend für alle.
+    if (myName !== activePlayer) return;
+    roundCategory = cat;
+    enterEingabe();
     sendData({ type: 'category_chosen', category: cat });
   }
 
