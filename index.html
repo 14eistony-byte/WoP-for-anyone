@@ -93,18 +93,6 @@
     transition: background 0.2s;
   }
   .icon-btn:hover { background:rgba(255,255,255,0.18); }
-
-  .top-profile-btn {
-    width: 36px; height: 36px; border-radius: 50%; overflow: hidden;
-    border: 2px solid var(--grad-a); background: #100a17; cursor: pointer;
-    padding: 0; flex-shrink: 0;
-  }
-  .top-profile-btn img { width: 100%; height: 100%; object-fit: cover; display: block; }
-  .top-profile-fallback {
-    width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;
-    font-size: 1rem;
-  }
-
   .icon-btn.active-mic { background: rgba(236, 72, 153, 0.4); }
   .icon-btn.muted-mic { background: rgba(251, 113, 133, 0.4); color: var(--danger); }
 
@@ -147,17 +135,6 @@
     font-size: 0.7rem; color: #fff; font-weight: bold; flex-shrink: 0;
   }
   .sidebar-avatar img { width: 100%; height: 100%; object-fit: cover; }
-
-  /* Einzelner Mute-Button für jede Person oben rechts */
-  .player-mute-btn {
-    width: 30px; height: 30px; border-radius: 50%; border: none;
-    background: rgba(255,255,255,0.08); color: var(--text);
-    display: flex; align-items: center; justify-content: center;
-    cursor: pointer; font-size: 0.9rem; flex-shrink: 0;
-    transition: transform 0.15s, background 0.2s;
-  }
-  .player-mute-btn:hover { background: rgba(255,255,255,0.18); transform: scale(1.06); }
-  .player-mute-btn.is-muted { background: rgba(251,113,133,0.35); color: var(--danger); }
 
   .wordmark{ display:flex; align-items:center; justify-content:center; gap:8px; margin:0 0 4px; font-size:1.9rem; font-weight:700; }
   .wordmark .grad{ background:linear-gradient(135deg,var(--grad-a),var(--grad-b)); -webkit-background-clip:text; background-clip:text; color:transparent; }
@@ -229,6 +206,23 @@
 
   .status-tag { font-size: 0.75rem; color: #fb7185; font-weight: bold; margin-left: auto; }
   .min-players-warn { font-size:0.85rem; color:var(--danger); margin-bottom:12px; font-weight:600; }
+
+  .answer-display{
+    margin-top:14px; padding:14px; border-radius:14px; text-align:left;
+    background:rgba(45,212,191,0.10); border:1px solid rgba(45,212,191,0.28);
+  }
+  .answer-display-label{ color:var(--wahrheit); font-weight:700; font-size:0.82rem; margin-bottom:5px; }
+  .answer-display-text{ white-space:pre-wrap; line-height:1.4; }
+  .emoji-bar{
+    position:fixed; right:calc(var(--safe-r) + 14px); bottom:calc(var(--safe-b) + 14px);
+    z-index:12; display:none; align-items:center; gap:4px; flex-wrap:wrap;
+    max-width:min(330px, calc(100vw - 28px)); padding:7px; border-radius:22px;
+    background:rgba(23,16,31,.92); border:1px solid var(--card-border);
+    box-shadow:0 8px 20px rgba(0,0,0,.4); backdrop-filter:blur(12px);
+  }
+  .reaction-btn{ border:0; border-radius:14px; background:rgba(255,255,255,.08); color:var(--text); padding:6px 7px; min-width:32px; cursor:pointer; font-size:1.05rem; }
+  .reaction-btn:hover{ background:rgba(255,255,255,.18); }
+  .reaction-count{ font-size:.67rem; font-weight:700; vertical-align:middle; margin-left:2px; }
 </style>
 </head>
 <body>
@@ -239,10 +233,6 @@
 
 <div class="right-side-panel">
   <div class="top-controls-row">
-    <button class="top-profile-btn" onclick="document.getElementById('avatar-input').click()" title="Profilbild ändern" aria-label="Profilbild ändern">
-      <img id="top-profile-img" src="" alt="Profilbild" style="display:none;">
-      <span class="top-profile-fallback" id="top-profile-fallback">👤</span>
-    </button>
     <button class="icon-btn muted-mic" id="mic-mute-btn" onclick="toggleMicMute()" title="Mikrofon An/Aus">🔇</button>
 
     <div class="volume-wrapper">
@@ -331,8 +321,10 @@
         <textarea id="answer-input" placeholder="Deine Antwort …"></textarea>
         <button class="btn" id="answer-btn" style="margin-top:8px;" onclick="sendAnswer()">Antwort absenden</button>
       </div>
-
-      <button class="btn" id="erledigt-btn" style="display:none; margin-top:12px; background:linear-gradient(135deg,#fbbf24,#f59e0b);" onclick="clickErledigt()">Fertig / Weiter ✅</button>
+      <div id="answer-display" class="answer-display" style="display:none;">
+        <div class="answer-display-label">Antwort von <span id="answer-author">…</span></div>
+        <div class="answer-display-text" id="answer-text">…</div>
+      </div>
     </div>
   </div>
 
@@ -344,6 +336,8 @@
   </div>
 
 </div>
+
+<div class="emoji-bar" id="emoji-bar" aria-label="Reaktionen"></div>
 
 <script>
   const APP_PREFIX = 'wopfriends-v2-';
@@ -361,6 +355,7 @@
   let lastPlayer = '';
   let roundCategory = '';
   let currentTask = null;
+  const REACTION_EMOJIS = ['🤣', '😭', '🥳', '🤬', '❤️', '😅', '🤫', '😶', '😮'];
   let myAvatarData = localStorage.getItem('wop_avatar') || null;
 
   let isMicMuted = true;
@@ -374,17 +369,10 @@
   let musicSourceNode = null;
 
   function initAvatar() {
-    const topImg = document.getElementById('top-profile-img');
-    const topFallback = document.getElementById('top-profile-fallback');
     if (myAvatarData) {
       document.getElementById('avatar-img').src = myAvatarData;
       document.getElementById('avatar-img').style.display = 'block';
       document.getElementById('avatar-placeholder').style.display = 'none';
-      if (topImg) {
-        topImg.src = myAvatarData;
-        topImg.style.display = 'block';
-        topFallback.style.display = 'none';
-      }
     }
   }
 
@@ -398,13 +386,6 @@
       document.getElementById('avatar-img').src = myAvatarData;
       document.getElementById('avatar-img').style.display = 'block';
       document.getElementById('avatar-placeholder').style.display = 'none';
-      const topImg = document.getElementById('top-profile-img');
-      const topFallback = document.getElementById('top-profile-fallback');
-      if (topImg) {
-        topImg.src = myAvatarData;
-        topImg.style.display = 'block';
-        topFallback.style.display = 'none';
-      }
       if (peer) {
         const p = players.find(x => x.id === peer.id);
         if (p) {
@@ -537,8 +518,12 @@
           conn.send({ type: 'sync_state', activePlayer, roundCategory, currentTask });
         }
       } else {
-        handleClientData(data);
-        relay(data, conn.peer);
+        // Der Host ist die einzige Quelle für den gemeinsamen Spielstand.
+        // Dadurch bekommt auch die Person, die etwas abgeschickt hat, ihr Update zurück.
+        if (isValidClientAction(data, conn.peer)) {
+          relay(data, null);
+          applyData(data);
+        }
       }
     });
 
@@ -568,6 +553,22 @@
     applyData(data);
   }
 
+  function isActivePeer(peerId){
+    const player = players.find(p => p.id === peerId);
+    return !!player && player.name === activePlayer;
+  }
+
+  function isValidClientAction(data, peerId){
+    if (data.type === 'category_chosen' || data.type === 'answer_submitted') {
+      return isActivePeer(peerId);
+    }
+    if (data.type === 'next_round') return isActivePeer(peerId);
+    // Jede nicht aktive Person darf eine Aufgabe oder Emoji-Reaktion senden.
+    if (data.type === 'task_submitted') return !!activePlayer && !isActivePeer(peerId) && !currentTask;
+    if (data.type === 'reaction') return !!currentTask && REACTION_EMOJIS.includes(data.emoji);
+    return false;
+  }
+
   function transferHost(newHostId) {
     players.forEach(p => p.isHost = (p.id === newHostId));
     isHost = (peer.id === newHostId);
@@ -576,17 +577,7 @@
   }
 
   function applyData(msg){
-    if (msg.type === 'kicked') {
-      alert('Du wurdest aus diesem Raum entfernt.');
-      if (hostConn) hostConn.close();
-      setScreen('screen-start');
-      return;
-    } else if (msg.type === 'banned') {
-      alert('Du wurdest aus diesem Raum gebannt.');
-      if (hostConn) hostConn.close();
-      setScreen('screen-start');
-      return;
-    } else if (msg.type === 'players'){
+    if (msg.type === 'players'){
       players = msg.list;
       const me = players.find(p => p.id === peer?.id);
       if (me) isHost = !!me.isHost;
@@ -600,9 +591,13 @@
       roundCategory = msg.category;
       enterEingabe();
     } else if (msg.type === 'task_submitted'){
-      currentTask = msg;
-      showTask(msg);
-    } else if (msg.type === 'task_completed'){
+      currentTask = { type: 'task_submitted', category: msg.category, text: msg.text, answer: '', reactions: {} };
+      showTask(currentTask);
+    } else if (msg.type === 'answer_submitted'){
+      if (!currentTask) return;
+      currentTask.answer = msg.text;
+      currentTask.answerAuthor = activePlayer;
+      showTask(currentTask);
       if (myName === activePlayer) {
         renderAuswahl();
         setScreen('screen-auswahl');
@@ -610,10 +605,17 @@
         document.getElementById('warten-info').innerText = `${activePlayer} wählt die nächste Person...`;
         setScreen('screen-warten');
       }
+    } else if (msg.type === 'reaction'){
+      if (!currentTask) return;
+      currentTask.reactions = currentTask.reactions || {};
+      currentTask.reactions[msg.emoji] = (currentTask.reactions[msg.emoji] || 0) + 1;
+      renderEmojiBar();
     } else if (msg.type === 'sync_state'){
       activePlayer = msg.activePlayer;
       roundCategory = msg.roundCategory;
-      if (msg.currentTask) showTask(msg.currentTask);
+      currentTask = msg.currentTask || null;
+      if (currentTask) showTask(currentTask);
+      else if (activePlayer) enterRound();
     }
   }
 
@@ -662,7 +664,7 @@
       players.forEach(p => {
         const li = document.createElement('li');
         const canStart = activeCount >= 2;
-        li.innerHTML = `<span>${p.name}</span> <button class="btn" style="padding:4px 12px; width:auto; ${!canStart ? 'opacity:0.5; cursor:not-allowed;' : ''}" ${canStart ? `onclick="startGame('${p.name.replace(/'/g, "\\'")}')"` : 'disabled'}>Start</button>`;
+        li.innerHTML = `<span>${p.name}</span> <button class="btn" style="padding:4px 12px; width:auto; ${!canStart ? 'opacity:0.5; cursor:not-allowed;' : ''}" ${canStart ? `onclick="startGame('${p.name}')"` : 'disabled'}>Start</button>`;
         sList.appendChild(li);
       });
     } else {
@@ -684,87 +686,23 @@
       const isMuted = voiceMuted[p.id] || false;
 
       card.innerHTML = `
-        <div style="display:flex; align-items:center; gap:6px; min-width:0;">
+        <div style="display:flex; align-items:center; gap:6px;">
           <div class="sidebar-avatar">
             ${p.avatar ? `<img src="${p.avatar}">` : p.name[0]}
           </div>
-          <span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${p.name}${isMe ? ' (Du)' : ''}</span>
+          <span>${p.name}${isMe ? ' (Du)' : ''}</span>
         </div>
         ${!isMe ? `
           <div style="display:flex; align-items:center; gap:4px;">
-            <button class="player-mute-btn ${isMuted ? 'is-muted' : ''}"
-                    onclick="toggleMutePlayer('${p.id}')"
-                    title="${isMuted ? 'Stummschaltung aufheben' : 'Diese Person stummschalten'}"
-                    aria-label="${isMuted ? 'Stummschaltung aufheben' : 'Person stummschalten'}">
+            <button class="icon-btn" onclick="toggleMutePlayer('${p.id}')" title="Mute Player" style="width:24px; height:24px; font-size:0.75rem;">
               ${isMuted ? '🔇' : '🎙️'}
             </button>
-            ${isHost ? `
-              <button class="player-mute-btn" onclick="kickPlayer('${p.id}')" title="Aus Raum kicken">👢</button>
-              <button class="player-mute-btn is-muted" onclick="banPlayer('${p.id}')" title="Aus Raum bannen">🚫</button>
-            ` : ''}
+            <input type="range" class="sidebar-volume-slider" min="0" max="300" step="1" value="${isMuted ? 0 : currentVol}" oninput="setVoiceVolume('${p.id}', this.value)">
           </div>
         ` : ''}
       `;
       sidebar.appendChild(card);
     });
-  }
-
-  function kickPlayer(id) {
-    if (!isHost) {
-      alert('Nur der Host kann Spieler kicken!');
-      return;
-    }
-
-    const p = players.find(x => x.id === id);
-    if (!p) return alert('Spieler wurde nicht gefunden.');
-    if (!confirm(`${p.name} wirklich aus dem Raum kicken?`)) return;
-
-    const conn = conns[id];
-    if (conn && conn.open) conn.send({ type: 'kicked' });
-    if (voiceCalls[id]) voiceCalls[id].close();
-
-    players = players.filter(x => x.id !== id);
-    delete conns[id];
-
-    // Verbindung nach der Nachricht schließen, damit der Kick sofort greift.
-    setTimeout(() => {
-      if (conn && conn.open) conn.close();
-    }, 150);
-
-    broadcastState();
-    renderLobby();
-    renderRightSidebar();
-  }
-
-  function banPlayer(id) {
-    if (!isHost) {
-      alert('Nur der Host kann Spieler bannen!');
-      return;
-    }
-
-    const p = players.find(x => x.id === id);
-    if (!p) return alert('Spieler wurde nicht gefunden.');
-    if (!confirm(`${p.name} wirklich aus diesem Raum bannen?`)) return;
-
-    // Ban direkt beim Host speichern.
-    bannedNames.add(p.name);
-    localStorage.setItem('wop_bans_' + myRoom, JSON.stringify([...bannedNames]));
-
-    const conn = conns[id];
-    if (conn && conn.open) conn.send({ type: 'banned' });
-    if (voiceCalls[id]) voiceCalls[id].close();
-
-    players = players.filter(x => x.id !== id);
-    delete conns[id];
-
-    setTimeout(() => {
-      if (conn && conn.open) conn.close();
-    }, 150);
-
-    broadcastState();
-    renderLobby();
-    renderRightSidebar();
-    alert(`${p.name} wurde gebannt!`);
   }
 
   function toggleMutePlayer(id){
@@ -788,24 +726,9 @@
   }
 
   function startGame(starter){
-    const activePlayers = players.filter(p => !p.afk);
-
-    if (activePlayers.length < 2) {
-      alert('Es müssen mindestens 2 aktive Spieler im Raum sein!');
-      return;
+    if (players.filter(p => !p.afk).length < 2) {
+      return alert('Es müssen mindestens 2 aktive Spieler im Raum sein!');
     }
-
-    if (!starter) {
-      alert('Bitte zuerst eine Startperson wählen!');
-      return;
-    }
-
-    // Spielzustand lokal setzen und anschließend an alle Spieler senden.
-    activePlayer = starter;
-    lastPlayer = '';
-    roundCategory = '';
-    currentTask = null;
-
     sendData({ type: 'game_start', activePlayer: starter });
   }
 
@@ -820,8 +743,7 @@
 
   function enterRound(){
     currentTask = null;
-    document.getElementById('answer-area').style.display = 'none';
-    document.getElementById('erledigt-btn').style.display = 'none';
+    renderEmojiBar();
     if (myName === activePlayer){
       setScreen('screen-kategorie');
     } else {
@@ -857,18 +779,32 @@
     document.getElementById('display-text').innerText = task.text;
 
     const isMe = myName === activePlayer;
+    const hasAnswer = !!task.answer;
+    const answerDisplay = document.getElementById('answer-display');
+    answerDisplay.style.display = hasAnswer ? 'block' : 'none';
+    if (hasAnswer) {
+      document.getElementById('answer-author').innerText = task.answerAuthor || activePlayer;
+      document.getElementById('answer-text').innerText = task.answer;
+    }
     if (isMe){
-      if (task.category === 'Wahrheit'){
+      if (task.category === 'Wahrheit' && !hasAnswer){
         document.getElementById('answer-area').style.display = 'block';
-        document.getElementById('answer-input').value = '';
-        document.getElementById('erledigt-btn').style.display = 'none';
+        if (document.getElementById('answer-input').value !== task.answer) {
+          document.getElementById('answer-input').value = task.answer || '';
+        }
       } else {
         document.getElementById('answer-area').style.display = 'none';
-        document.getElementById('erledigt-btn').style.display = 'block';
       }
     } else {
       document.getElementById('answer-area').style.display = 'none';
-      document.getElementById('erledigt-btn').style.display = 'none';
+    }
+    renderEmojiBar();
+    // Pflicht braucht keinen zusätzlichen "Fertig"-Button: Die aktive Person
+    // kann nach dem Anzeigen direkt die nächste Person bestimmen.
+    if (isMe && task.category === 'Pflicht') {
+      renderAuswahl();
+      setScreen('screen-auswahl');
+      return;
     }
     setScreen('screen-anzeige');
   }
@@ -876,15 +812,34 @@
   function sendAnswer(){
     const text = document.getElementById('answer-input').value.trim();
     if (!text) return;
-
-    // Antwort fertig: alle Spieler werden synchronisiert und die aktive Person darf wählen.
-    document.getElementById('answer-area').style.display = 'none';
-    sendData({ type: 'task_completed' });
+    if (myName !== activePlayer || !currentTask || currentTask.answer) return;
+    document.getElementById('answer-btn').disabled = true;
+    sendData({ type: 'answer_submitted', text: text });
   }
 
-  function clickErledigt(){
-    // Pflicht ist fertig: jetzt geht es für alle weiter.
-    sendData({ type: 'task_completed' });
+  function renderEmojiBar(){
+    const bar = document.getElementById('emoji-bar');
+    if (!currentTask) {
+      bar.style.display = 'none';
+      return;
+    }
+    const reactions = currentTask.reactions || {};
+    bar.innerHTML = '';
+    REACTION_EMOJIS.forEach(emoji => {
+      const button = document.createElement('button');
+      button.className = 'reaction-btn';
+      button.type = 'button';
+      button.title = `${emoji} reagieren`;
+      button.innerHTML = `${emoji}${reactions[emoji] ? `<span class="reaction-count">${reactions[emoji]}</span>` : ''}`;
+      button.onclick = () => sendReaction(emoji);
+      bar.appendChild(button);
+    });
+    bar.style.display = 'flex';
+  }
+
+  function sendReaction(emoji){
+    if (!currentTask) return;
+    sendData({ type: 'reaction', emoji });
   }
 
   function renderAuswahl(){
@@ -899,7 +854,6 @@
   }
 
   function selectNext(name){
-    // Die Auswahl ersetzt den alten Fertig/Weiter-Schritt.
     sendData({ type: 'next_round', activePlayer: name });
   }
 
