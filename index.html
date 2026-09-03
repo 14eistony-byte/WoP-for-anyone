@@ -463,8 +463,10 @@
     <div class="mode-card">
       <div class="mode-question" id="most-question">…</div>
       <div class="vote-grid" id="most-votes"></div>
-      <button class="btn" onclick="submitMostVote()">Abstimmen 🗳️</button>
+      <button class="btn" id="most-submit-btn" onclick="submitMostVote()">Abstimmen 🗳️</button>
+      <div id="most-status" style="margin-top:10px;opacity:.8"></div>
       <div id="most-results" style="display:none;margin-top:16px"></div>
+      <button class="btn" id="most-next-btn" style="display:none;margin-top:12px" onclick="nextMostQuestion()">Nächste Frage ➡️</button>
     </div>
     <button class="btn" style="margin-top:12px" onclick="setScreen('screen-modes')">Zurück</button>
   </div>
@@ -688,6 +690,14 @@
         // Dadurch bekommt auch die Person, die etwas abgeschickt hat, ihr Update zurück.
         if (data.type === 'ban_vote') {
           recordBanVote(conn.peer, data.target);
+        } else if (data.type === 'most_start_request') {
+          const active=players.filter(p=>!p.afk);
+          if(active.length>=2){const msg={type:'most_start',index:Math.floor(Math.random()*MOST_LIKELY.length),round:++mostRound};relay(msg,null);applyData(msg);}
+        } else if (data.type === 'most_next_request') {
+          const active=players.filter(p=>!p.afk);
+          if(mostVoters.size>=active.length){const msg={type:'most_next',index:Math.floor(Math.random()*MOST_LIKELY.length),round:++mostRound};relay(msg,null);applyData(msg);}
+        } else if (data.type === 'most_vote' && isValidClientAction(data, conn.peer)) {
+          data.voterId=conn.peer; relay(data,null); applyData(data);
         } else if (isValidClientAction(data, conn.peer)) {
           relay(data, null);
           applyData(data);
@@ -728,6 +738,13 @@
 
   function isValidClientAction(data, peerId){
     if (data.type === 'category_chosen') return !!activePlayer && isActivePeer(peerId) && (data.category === 'Wahrheit' || data.category === 'Pflicht');
+    if (data.type === 'most_start_request') return true;
+    if (data.type === 'most_vote') {
+      const active = players.filter(p => !p.afk);
+      return active.some(p => p.id === peerId) && Number.isInteger(data.round) && data.round === mostRound && active.some(p => p.id === data.targetId) && data.targetId !== peerId;
+    }
+    if (data.type === 'most_next_request') return mostVoters.size >= players.filter(p => !p.afk).length;
+
     if (data.type === 'answer_submitted') {
       return isActivePeer(peerId);
     }
@@ -785,6 +802,17 @@
       roundCategory = msg.category;
       gamePhase = 'task_entry';
       enterEingabe();
+    } else if (msg.type === 'most_start' || msg.type === 'most_next') {
+      mostIndex = msg.index; mostRound = msg.round; mostSelected = null; mostVotes = {}; mostVoters = new Set(); mostHasVoted = false;
+      document.getElementById('most-question').innerText = MOST_LIKELY[mostIndex];
+      document.getElementById('most-results').style.display = 'none';
+      document.getElementById('most-next-btn').style.display = 'none';
+      document.getElementById('most-submit-btn').style.display = 'inline-block';
+      document.getElementById('most-status').innerText = '0/' + players.filter(p => !p.afk).length + ' Spieler haben abgestimmt.';
+      renderMostVotes(); setScreen('screen-most');
+    } else if (msg.type === 'most_vote') {
+      if (msg.round !== mostRound || mostVoters.has(msg.voterId)) return;
+      mostVoters.add(msg.voterId); mostVotes[msg.targetId] = (mostVotes[msg.targetId] || 0) + 1; renderMostResults();
     } else if (msg.type === 'task_submitted'){
       currentTask = { type: 'task_submitted', category: msg.category, text: msg.text, answer: '', reactions: {} };
       gamePhase = 'task_display';
@@ -1197,7 +1225,7 @@
     'Wer würde eher etwas Lustiges im falschen Moment sagen?'
   ];
   let neverIndex = -1, neverDonePlayers = new Set();
-  let mostIndex = 0, mostSelected = null, mostVotes = {};
+  let mostIndex = 0, mostSelected = null, mostVotes = {}, mostVoters = new Set(), mostHasVoted = false, mostRound = 0;
   let bottleBusy = false;
   let bottleGameStarted = false;
 
@@ -1287,38 +1315,49 @@
       `${answered}/${active.length} Spieler haben abgestimmt.`;
   }
 
+  function getMostActivePlayers(){ return players.filter(p => !p.afk); }
+
   function openMostLikely(){
-    mostIndex = Math.floor(Math.random() * MOST_LIKELY.length);
-    mostSelected = null;
-    mostVotes = {};
-    document.getElementById('most-question').innerText = MOST_LIKELY[mostIndex];
-    renderMostVotes();
-    document.getElementById('most-results').style.display = 'none';
-    setScreen('screen-most');
+    if(getMostActivePlayers().length<2) return alert('Mindestens 2 aktive Spieler benötigt!');
+    if(isHost){ const msg={type:'most_start',index:Math.floor(Math.random()*MOST_LIKELY.length),round:++mostRound}; relay(msg,null); applyData(msg); }
+    else sendData({type:'most_start_request'});
   }
 
   function renderMostVotes(){
-    const grid = document.getElementById('most-votes');
-    grid.innerHTML = '';
-    players.filter(p => p.id !== peer?.id && !p.afk).forEach(p => {
-      const btn = document.createElement('button');
-      btn.className = 'vote-player' + (mostSelected === p.id ? ' selected' : '');
-      btn.innerHTML = `<div class="vote-avatar">${p.avatar ? `<img src="${p.avatar}">` : p.name[0]}</div><div>${p.name}</div>`;
-      btn.onclick = () => { mostSelected = p.id; renderMostVotes(); };
-      grid.appendChild(btn);
+    const grid=document.getElementById('most-votes'); grid.innerHTML='';
+    if(mostHasVoted){ grid.innerHTML='<div style="opacity:.8;padding:10px">Du hast bereits abgestimmt. ☑️</div>'; return; }
+    getMostActivePlayers().filter(p=>p.id!==peer?.id).forEach(p=>{
+      const btn=document.createElement('button'); btn.className='vote-player'+(mostSelected===p.id?' selected':'');
+      btn.innerHTML=`<div class="vote-avatar">${p.avatar?`<img src="${p.avatar}">`:p.name[0]}</div><div>${p.name}</div>`;
+      btn.onclick=()=>{mostSelected=p.id;renderMostVotes();}; grid.appendChild(btn);
     });
   }
 
+  function renderMostResults(){
+    const active=getMostActivePlayers(), total=mostVoters.size, results=document.getElementById('most-results');
+    const sorted=active.filter(p=>p.id!==peer?.id).map(p=>[p.id,mostVotes[p.id]||0]).sort((a,b)=>b[1]-a[1]);
+    const maxVotes=sorted.length?sorted[0][1]:0;
+    const winners=sorted.filter(([id,count])=>count===maxVotes).map(([id])=>players.find(p=>p.id===id)?.name).filter(Boolean);
+    results.innerHTML='<strong>🏆 Lösung: '+(winners.length?winners.join(' & '):'Niemand')+'</strong>'+
+      sorted.map(([id,count])=>{const p=players.find(x=>x.id===id);return p?`<div class="result-row"><span>${p.name}</span><span class="result-count">${count} Stimme${count===1?'':'n'}</span></div>`:'';}).join('');
+    document.getElementById('most-status').innerText=`${total}/${active.length} Spieler haben abgestimmt.`;
+    if(total>=active.length){
+      results.style.display='block'; document.getElementById('most-submit-btn').style.display='none';
+      document.getElementById('most-next-btn').style.display='inline-block'; mostHasVoted=true; renderMostVotes();
+      document.getElementById('most-status').innerText=`Alle ${active.length} Spieler haben abgestimmt! 🎉`;
+    }
+  }
+
   function submitMostVote(){
-    if (!mostSelected) return alert('Wähle zuerst eine Person aus!');
-    mostVotes[mostSelected] = (mostVotes[mostSelected] || 0) + 1;
-    const results = document.getElementById('most-results');
-    const sorted = Object.entries(mostVotes).sort((a,b) => b[1]-a[1]);
-    results.innerHTML = '<strong>Aktueller Stand:</strong>' + sorted.map(([id,count]) => {
-      const p = players.find(x => x.id === id);
-      return p ? `<div class="result-row"><span>${p.name}</span><span class="result-count">${count} Stimme${count === 1 ? '' : 'n'}</span></div>` : '';
-    }).join('');
-    results.style.display = 'block';
+    if(mostHasVoted) return; if(!mostSelected) return alert('Wähle zuerst eine Person aus!'); if(!peer) return;
+    mostHasVoted=true; document.getElementById('most-submit-btn').style.display='none'; renderMostVotes();
+    sendData({type:'most_vote',voterId:peer.id,targetId:mostSelected,round:mostRound});
+  }
+
+  function nextMostQuestion(){
+    if(mostVoters.size<getMostActivePlayers().length) return;
+    if(isHost){ const msg={type:'most_next',index:Math.floor(Math.random()*MOST_LIKELY.length),round:++mostRound}; relay(msg,null); applyData(msg); }
+    else sendData({type:'most_next_request'});
   }
 
   function openBottle(){
